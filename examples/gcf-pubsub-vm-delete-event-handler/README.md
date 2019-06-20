@@ -149,6 +149,50 @@ updateTime: '2019-06-11T23:17:29Z'
 versionId: '2'
 ```
 
+Function Logs
+===
+
+This function uses the [Logging facility for Python].  When running in the
+Google Cloud Functions environment, the Python log messages are logged with
+Stackdriver severity according to the following table.
+
+| Python log level | Stackdriver severity |
+|------------------|----------------------|
+| debug            | info                 |
+| info             | info                 |
+| warning          | error                |
+| error            | error                |
+| critical         | error                |
+
+Note the debug level of the Python logger is respected.  For this reason debug
+messages will not appear in Stackdriver unless the function is deployed with
+the DEBUG enviornment variable.
+
+Example Logs
+===
+
+Note these log message formats are subject to change.  They're provided here to
+assist with tracing the function behavior when deployed.
+
+When the function cannot obtain the IP address of the VM the log messages look
+like:
+
+```
+Function execution started
+{"message": "<HttpError 404 when requesting https://www.googleapis.com/compute/v1/projects/user-dev-242122/zones/us-west1-a/instances/test?alt=json returned \"The resource 'projects/user-dev-242122/zones/us-west1-a/instances/test' was not found\">"}
+{"instance": "test", "message": "Could not get IP address. Obtaining the IP is not guaranteed because of race condition with VM deletion. Aborting with no action taken"}
+Function execution took 1910 ms, finished with status: 'ok'
+```
+
+A successful deletion looks like:
+
+```
+Function execution started
+{"message": "Processing VM deletion event", "event_type": "GCE_API_CALL", "project": "user-dev-242122", "zone": "us-west1-c", "instance": "thursday-dw1"}
+{"message": "DNS RECORD DELETED", "project": "dnsregistration", "managed_zone": "nonprod-private-zone", "record": {"name": "thursday-dw1.nonprod.gcp.example.com.", "type": "A", "ttl": 300, "rrdatas": ["10.138.0.63"], "signatureRrdatas": [], "kind": "dns#resourceRecordSet"}, "response": {"additions": [], "deletions": [{"name": "thursday-dw1.nonprod.gcp.example.com.", "type": "A", "ttl": 300, "rrdatas": ["10.138.0.63"], "signatureRrdatas": [], "kind": "dns#resourceRecordSet"}], "startTime": "2019-06-20T23:15:37.962Z", "id": "31", "status": "pending", "kind": "dns#change"}}
+Function execution took 2925 ms, finished with status: 'ok'
+```
+
 [bg]: https://cloud.google.com/functions/docs/writing/background
 [sa-gcp-managed]: https://cloud.google.com/iam/docs/understanding-service-accounts#managing_service_account_keys
 [pubsub-quickstart]: https://cloud.google.com/pubsub/docs/quickstart-console#create_a_topic

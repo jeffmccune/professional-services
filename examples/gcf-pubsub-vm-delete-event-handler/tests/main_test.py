@@ -123,13 +123,15 @@ def test_ip_address(capsys, mock_env, mock_instance_resource):
     assert ip == "10.138.0.44"
 
 
-def test_ip_address_no_network(capsys, mock_env, mock_instance_resource_no_network):
+def test_ip_address_no_network(capsys, mock_env,
+                               mock_instance_resource_no_network):
     """ip_address should return None when the VM has no IP addresses"""
     ip = main.ip_address(mock_instance_resource_no_network)
     assert ip is None
 
 
-def test_aborts_when_vm_has_been_deleted(capsys, caplog, mock_env, trigger_event):
+def test_aborts_when_vm_has_been_deleted(capsys, caplog, mock_env,
+                                         trigger_event):
     """Aborts when the race against the VM delete operation is lost.
 
     In this scenario, the API returns 404 not found for the instance."""
@@ -137,18 +139,10 @@ def test_aborts_when_vm_has_been_deleted(capsys, caplog, mock_env, trigger_event
         ({'status': '200'}, readfile('compute-v1.json')),
         ({'status': '404'}, ''),
     ])
-    num_deleted = main.dns_vm_gc(trigger_event, http=http)
+    main.dns_vm_gc(trigger_event, http=http)
     assert 'projects/user-dev-242122/zones/us-west1-a/instances/test' \
         in http.saved_requests[1]['uri']
     assert 'Could not get IP address' in caplog.text
-
-# TODO: Test case: VM exists, no A record matches.  Should not delete.
-# TODO: Test case: VM exists, A record matches, IP does not match.  Should not
-# delete.
-# TODO: Test case: VM exists, Two a records match (prod, nonprod), both with IP
-# addresses.  Should delete.
-# TODO: Test case: VM exists, multiple A records, one matching.  Should not
-# delete.
 
 
 def test_suggestion_when_managed_zone_not_found(capsys, mock_env,
@@ -211,7 +205,7 @@ def test_default_log_level_error(capsys, mock_env_no_debug, mock_event_data,
     with pytest.raises(KeyError):
         main.dns_vm_gc(mock_event_data, http=mock_http)
     log = logging.getLogger(LOGNAME)
-    assert log.level == logging.WARN
+    assert log.level == logging.INFO
 
 
 def test_fails_when_no_ip(mock_env, caplog, trigger_event, mock_http):

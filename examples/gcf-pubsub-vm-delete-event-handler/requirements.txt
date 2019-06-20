@@ -1,0 +1,2 @@
+google-api-python-client==1.7.9
+google-cloud-logging==1.11.0

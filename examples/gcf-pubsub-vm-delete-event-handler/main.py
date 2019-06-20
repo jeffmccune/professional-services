@@ -10,6 +10,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+
+__author__ = 'Jeff McCune <jeff@openinfrastructure.co>'
+
 import base64
 import json
 import logging
@@ -18,10 +21,7 @@ from googleapiclient import discovery
 from googleapiclient.errors import HttpError
 from typing import List, Optional
 
-# TODO: Improve logging, see:
-# https://googleapis.github.io/google-cloud-python/latest/logging/usage.html
-
-LOGNAME = 'google.cloud.function.dns_vm_gc'
+LOGNAME = __name__
 
 
 def compute(http=None):
@@ -32,19 +32,20 @@ def dns(http=None):
     return discovery.build('dns', 'v1', http=http)
 
 
-def setup_logging():
+def setup_logging(context=None):
     """Sets up logging"""
-    # See https://github.com/googleapis/google-api-python-client/issues/299
-    logger = logging.getLogger('googleapiclient.discovery_cache')
-    logger.setLevel(logging.ERROR)
-    # Set level of our logger.
-    log = logging.getLogger(LOGNAME)
     if os.getenv('DEBUG'):
-        log.setLevel(logging.DEBUG)
+        level = logging.DEBUG
     else:
-        log.setLevel(logging.WARN)
-    # TODO(jmccune): Integrate with google.cloud.logging
-    # See: https://cloud.google.com/functions/docs/monitoring/logging
+        level = logging.INFO
+    # Make googleapiclient less noisy.
+    # See https://github.com/googleapis/google-api-python-client/issues/299
+    api_logger = logging.getLogger('googleapiclient')
+    api_logger.setLevel(logging.ERROR)
+    # Set level of our logger.
+    logger = logging.getLogger(LOGNAME)
+    logger.setLevel(level)
+    return logger
 
 
 def get_instance(project, compute_zone, instance, http=None):
@@ -129,7 +130,7 @@ def delete_record(project: str, managed_zone: str, record: dict, http=None):
             acts like it that HTTP requests will be made through.
     """
     log = logging.getLogger(LOGNAME)
-    log.info(json.dumps({
+    log.debug(json.dumps({
         'message': 'BEGIN Deleting record',
         'project': project,
         'managed_zone': managed_zone,
@@ -141,8 +142,14 @@ def delete_record(project: str, managed_zone: str, record: dict, http=None):
         managedZone=managed_zone,
         body=change)
     response = request.execute()
-    log.info(json.dumps({
+    log.debug(json.dumps({
         'message': 'END Deleting record',
+        'project': project,
+        'managed_zone': managed_zone,
+        'record': record,
+        'response': response}))
+    log.info(json.dumps({
+        'message': "DNS RECORD DELETED",
         'project': project,
         'managed_zone': managed_zone,
         'record': record,
@@ -208,7 +215,7 @@ def dns_vm_gc(data, context=None, ip_provided: Optional[str] = None,
 
     Args:
         data (dict): The dictionary with data specific to this type of event.
-            context (google.cloud.functions.Context): The Cloud Functions event
+        context (google.cloud.functions.Context): The Cloud Functions event
             metadata.
         ip_provided (string): Optionally inject the IP address.  Mainly used
             for testing when a VM has already been deleted and the IP cannot be
@@ -218,7 +225,7 @@ def dns_vm_gc(data, context=None, ip_provided: Optional[str] = None,
     Returns:
         Number of records deleted across all managed zones.
     """
-    setup_logging()
+    setup_logging(context)
     log = logging.getLogger(LOGNAME)
 
     num_deleted = 0
@@ -242,11 +249,17 @@ def dns_vm_gc(data, context=None, ip_provided: Optional[str] = None,
     instance = event['labels']['compute.googleapis.com/resource_name']
 
     event_type = event['jsonPayload']['event_type']
+    log.info(json.dumps({
+        'message': 'Processing VM deletion event',
+        'event_type': event_type,
+        'project': project,
+        'zone': zone,
+        'instance': instance,
+    }))
+
     if event_type != 'GCE_API_CALL':
-        log.debug({
-            'message': 'No action taken.  Event type is not GCE_API_CALL',
-            'event_type': event_type
-        })
+        log.info(json.dumps({
+            'message': 'No action taken.  Event type is not GCE_API_CALL'}))
         return 0
 
     if ip_provided is None:
