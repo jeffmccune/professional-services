@@ -56,11 +56,11 @@ topic][pubsub-quickstart].
 Configure Log Exports
 ---
 
-Configure Log Exports in one or more service projects.  Logs are exported to
-the `vm-deletions` topic in the logs project.
+Configure Log Exports sink in one or more service projects.  Logs are exported
+to the `vm-deletions` topic in the logs project.
 
-[Stackdriver logs exports][logs-exports] are used to convey VM lifecycle events
-to the DNS VM GC function via Cloud Pub/Sub.  A Stackdriver filter is used to
+[Stackdriver logs exports][logs-exports] are used to convey VM delete events to
+the DNS VM GC function via Cloud Pub/Sub.  A Stackdriver filter is used to
 limit logs to VM deletion events, reducing data traveling through Pub/Sub.
 
 Configure an export to the `vm-deletions` topic with the following filter, for
@@ -139,8 +139,7 @@ Zone names for your environment.  A sample is provided in env.yaml.sample.
 ```yaml
 # env.yaml
 ---
-DNS_VM_GC_DNS_PROJECT: my-vpc-host-project
-DNS_VM_GC_DNS_ZONES: my-nonprod-private-zone,my-prod-private-zone
+DNS_VM_GC_MANAGED_ZONES: projects/my-vpc-host/managedZones/my-nonprod-private-zone
 ```
 
 ```bash
@@ -187,8 +186,7 @@ the organization level:
 ```yaml
 # env.yaml
 ---
-DNS_VM_GC_DNS_PROJECT: my-vpc-host-project
-DNS_VM_GC_DNS_ZONES: my-nonprod-private-zone,my-prod-private-zone
+DNS_VM_GC_MANAGED_ZONES: projects/my-vpc-host/managedZones/my-nonprod-private-zone
 DNS_VM_GC_REPORTING_LOG_STREAM: organizations/000000000000/logs/dns-vm-gc-report
 ```
 

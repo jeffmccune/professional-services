@@ -15,9 +15,10 @@ import json
 import logging
 import pytest
 import requests
-import main
+import dns_vm_gc
 from googleapiclient.http import HttpMockSequence
 from helpers import readfile
+from structured import log
 from unittest import mock
 
 
@@ -65,9 +66,10 @@ def mock_instance_resource_no_network():
 @pytest.fixture
 def mock_env(monkeypatch):
     """Sets required environment variables."""
-    monkeypatch.setenv("DNS_VM_GC_DNS_PROJECT", "my-vpc-host")
-    monkeypatch.setenv("DNS_VM_GC_DNS_ZONES",
-                       "my-nonprod-private-zone,my-prod-private-zone")
+    monkeypatch.setenv(
+        "DNS_VM_GC_MANAGED_ZONES",
+        ("projects/my-vpc-host/managedZones/my-nonprod-private-zone,"
+         "projects/my-vpc-host/managedZones/my-prod-private-zone"))
     monkeypatch.setenv("GCP_PROJECT", "logging")
     monkeypatch.setenv("FUNCTION_REGION", "us-west1")
     monkeypatch.setenv("FUNCTION_NAME", "dns_vm_gc")
@@ -86,13 +88,8 @@ def mock_env_no_debug(monkeypatch, mock_env):
 
 
 @pytest.fixture
-def mock_env_no_proj(monkeypatch, mock_env):
-    monkeypatch.delenv("DNS_VM_GC_DNS_PROJECT", False)
-
-
-@pytest.fixture
 def mock_env_no_zones(monkeypatch, mock_env):
-    monkeypatch.delenv("DNS_VM_GC_DNS_ZONES", False)
+    monkeypatch.delenv("DNS_VM_GC_MANAGED_ZONES", False)
 
 
 @pytest.fixture
@@ -157,49 +154,43 @@ def mock_session():
 
 @pytest.fixture
 def app(mock_env, mock_http, mock_session):
-    return main.DnsVmGcApp(http=mock_http, session=mock_session)
+    return dns_vm_gc.DnsVmGcApp(http=mock_http, session=mock_session)
 
 
 @pytest.fixture
 def app_debug(mock_env_debug, mock_http, mock_session):
-    return main.DnsVmGcApp(http=mock_http, session=mock_session)
+    return dns_vm_gc.DnsVmGcApp(http=mock_http, session=mock_session)
 
 
 @pytest.fixture
 def app_warm(app, monkeypatch):
     """When the function is warmed up from previous events"""
-    monkeypatch.setattr(main.RuntimeState, 'app', app)
+    monkeypatch.setattr(dns_vm_gc.RuntimeState, 'app', app)
     return app
 
 
 @pytest.fixture
 def app_cold(monkeypatch, mock_env, mock_session, mock_http):
     """When the function executes from a cold start"""
-    monkeypatch.setattr(main.RuntimeState, 'app', None)
+    monkeypatch.setattr(dns_vm_gc.RuntimeState, 'app', None)
     return None
 
 
 @pytest.fixture
 def handler(app, trigger_event):
-    return main.EventHandler(app=app, data=trigger_event)
+    return dns_vm_gc.EventHandler(app=app, data=trigger_event)
 
 
 def test_no_data_key(app, trigger_empty):
     with pytest.raises(KeyError) as err:
         app.handle_event(trigger_empty, None)
-    assert "Expected data dictionary contains key 'data'" in str(err.value)
-
-
-def test_config_no_project(mock_env_no_proj, app, trigger_event):
-    with pytest.raises(EnvironmentError) as err:
-        main.EventHandler(app=app, data=trigger_event)
-    assert "Env var DNS_VM_GC_DNS_PROJECT is required" in str(err.value)
+    assert "data" in str(err.value)
 
 
 def test_config_no_zones(mock_env_no_zones, app, trigger_event):
     with pytest.raises(EnvironmentError) as err:
-        main.EventHandler(app=app, data=trigger_event)
-    assert "Env var DNS_VM_GC_DNS_ZONES is required" in str(err.value)
+        dns_vm_gc.EventHandler(app=app, data=trigger_event)
+    assert "Env var DNS_VM_GC_MANAGED_ZONES is required" in str(err.value)
 
 
 def test_ip_address(handler, mock_instance_resource, caplog):
@@ -230,8 +221,7 @@ def test_managed_zone_not_found(app, trigger_event, mock_http, caplog):
     mock_http.append(({'status': '404'}, ''))
     mock_http.append(({'status': '404'}, ''))
     num_deleted = app.handle_event(trigger_event)
-    expected = ('Check managed zones specified in DNS_VM_GC_DNS_ZONES '
-                'exist in DNS_VM_GC_DNS_PROJECT')
+    expected = 'Check the managed zones specified in DNS_VM_GC_MANAGED_ZONES'
     assert 0 == num_deleted
     assert expected in caplog.text
 
@@ -251,7 +241,7 @@ def test_delete_happens_one_vm_matches(app, trigger_event, mock_http, caplog):
 
 def test_debug_env_log_level(mock_env_debug, mock_http):
     """Log level is DEBUG when DEBUG=1"""
-    app = main.DnsVmGcApp(mock_http)
+    app = dns_vm_gc.DnsVmGcApp(mock_http)
     assert app.log.level == logging.DEBUG
 
 
@@ -260,31 +250,31 @@ def test_default_log_level(app):
 
 
 def test_when_warm(app_warm, mock_http, mock_session, trigger_event_done):
-    assert main.RuntimeState.app is app_warm
-    main.main(trigger_event_done, context=None, http=mock_http,
-              session=mock_session)
-    assert main.RuntimeState.app is app_warm
+    assert dns_vm_gc.RuntimeState.app is app_warm
+    dns_vm_gc.dns_vm_gc(trigger_event_done, context=None, http=mock_http,
+                        session=mock_session)
+    assert dns_vm_gc.RuntimeState.app is app_warm
 
 
 def test_when_cold(app_cold, mock_http, mock_session, trigger_event_done):
-    assert main.RuntimeState.app is None
-    main.main(trigger_event_done, context=None, http=mock_http,
-              session=mock_session)
-    assert main.RuntimeState.app is not None
+    assert dns_vm_gc.RuntimeState.app is None
+    dns_vm_gc.dns_vm_gc(trigger_event_done, context=None, http=mock_http,
+                        session=mock_session)
+    assert dns_vm_gc.RuntimeState.app is not None
 
 
 def test_multiple_calls(app_cold, mock_http, mock_session, trigger_event_done):
-    assert main.RuntimeState.app is None
-    main.main(trigger_event_done, context=None, http=mock_http,
-              session=mock_session)
-    assert main.RuntimeState.app is not None
-    app_memo = main.RuntimeState.app
-    main.main(trigger_event_done, context=None, http=mock_http,
-              session=mock_session)
-    assert main.RuntimeState.app is app_memo
-    main.main(trigger_event_done, context=None, http=mock_http,
-              session=mock_session)
-    assert main.RuntimeState.app is app_memo
+    assert dns_vm_gc.RuntimeState.app is None
+    dns_vm_gc.dns_vm_gc(trigger_event_done, context=None, http=mock_http,
+                        session=mock_session)
+    assert dns_vm_gc.RuntimeState.app is not None
+    app_memo = dns_vm_gc.RuntimeState.app
+    dns_vm_gc.dns_vm_gc(trigger_event_done, context=None, http=mock_http,
+                        session=mock_session)
+    assert dns_vm_gc.RuntimeState.app is app_memo
+    dns_vm_gc.dns_vm_gc(trigger_event_done, context=None, http=mock_http,
+                        session=mock_session)
+    assert dns_vm_gc.RuntimeState.app is app_memo
 
 
 def test_gce_op_done_event(trigger_event_done, app, caplog):
@@ -299,13 +289,14 @@ def test_gce_op_done_event_debug(trigger_event_done, app_debug, caplog):
     assert 'No action taken' in caplog.text
 
 
-def test_reports_to_project_logs_by_default(mock_env, vm_uri, event_id):
-    log_entry = main.StructuredLog(vm_uri=vm_uri, event_id=event_id)
-    assert 'projects/logging/logs/dns_vm_gc' == log_entry.log_name
+def test_structured_log_is_abstract(mock_env, vm_uri, event_id):
+    with pytest.raises(TypeError) as err:
+        log.StructuredLog(vm_uri=vm_uri, event_id=event_id)
+    assert "Can't instantiate abstract class StructuredLog" in str(err.value)
 
 
 def test_reports_stream_is_user_configurable(mock_env_log_stream, vm_uri,
                                              event_id):
-    log_entry = main.StructuredLog(vm_uri=vm_uri, event_id=event_id)
+    log_entry = log.NoOp(vm_uri=vm_uri, event_id=event_id)
     expected = 'organizations/000000000000/logs/dns-vm-gc-report'
     assert expected == log_entry.log_name

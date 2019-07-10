@@ -33,9 +33,8 @@ First, make sure you have the following environment variables set as if they
 would be in the context of GCF.
 
 ```bash
-# env | grep DNS
-DNS_VM_GC_DNS_PROJECT=dnsregistration
-DNS_VM_GC_DNS_ZONES=nonprod-private-zone
+# env | grep DNS_VM_GC
+DNS_VM_GC_MANAGED_ZONES=projects/my-vpc-host/managedZones/nonprod-private-zone
 ```
 
 If necessary, use Application Default Credentials:
